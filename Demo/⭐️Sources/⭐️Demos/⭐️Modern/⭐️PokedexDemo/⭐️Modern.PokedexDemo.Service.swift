@@ -276,7 +276,99 @@ extension Modern.PokedexDemo {
                     receiveValue: {}
                 )
         }
-        
+
+        func runInternalTests() {
+            readInMultiThreadAfterAsyncUpdate()
+            checkUpdateAfterAsyncUpdate()
+            multiThreadRead()
+        }
+
+        func checkUpdateAfterAsyncUpdate() {
+            let entry = try? Modern.PokedexDemo.dataStack.fetchOne(
+                From<Modern.PokedexDemo.PokedexEntry>().where({ ["bulbasaur", "bulbasaur 2", "bulbasaur 3"] ~= $0.$id })
+            )
+            print(entry?.id)
+
+            Modern.PokedexDemo.dataStack.perform(
+                asynchronous: { (transaction) -> Modern.PokedexDemo.PokedexEntry in
+                    let bulbasaur = transaction.edit(entry!)
+                    print("intial: \(bulbasaur?.id)")
+                    if bulbasaur?.id == "bulbasaur" {
+                        bulbasaur?.id = "bulbasaur 2"
+                    } else {
+                        bulbasaur?.id = "bulbasaur"
+                    }
+                    return bulbasaur!
+                },
+                completion: { (_) in
+                    print(entry?.id)
+                }
+            )
+        }
+
+        func readInMultiThreadAfterAsyncUpdate() {
+            DispatchQueue.global().async {
+                var entry: Modern.PokedexDemo.PokedexEntry?
+                let future = Future<Bool, Error> { promises  in
+                    Modern.PokedexDemo.dataStack.perform(
+                        asynchronous: { (transaction) -> Modern.PokedexDemo.PokedexEntry? in
+                            let entry = try? transaction.fetchOne(
+                                From<Modern.PokedexDemo.PokedexEntry>().where({ ["bulbasaur", "bulbasaur 2", "bulbasaur 3"] ~= $0.$id })
+                            )
+
+                            let bulbasaur = transaction.edit(entry!)
+                            print("intial: \(bulbasaur?.id)")
+                            if bulbasaur?.id == "bulbasaur" {
+                                bulbasaur?.id = "bulbasaur 2"
+                            } else {
+                                bulbasaur?.id = "bulbasaur"
+                            }
+                            return bulbasaur
+                        }, completion: { result in
+                            entry = try? result.get()
+                            promises(.success(true))
+                        }
+                    )
+                }
+
+                future.sink(receiveCompletion: {_ in }, receiveValue: { value in print(value) })
+
+                for i in 0..<15 {
+                    DispatchQueue.global().async {
+                        Modern.PokedexDemo.dataStack.perform(
+                            asynchronous: { (transaction) -> String? in
+                                if let _entry = entry {
+                                    let fetched = try? transaction.fetchExisting(_entry)
+                                    return fetched?.id
+                                } else {
+                                    return .none
+                                }
+                            },
+                            completion: { (id) in
+                                print("called \(i): \(id)")
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        func multiThreadRead() {
+            for i in 0..<15 {
+                DispatchQueue.global().async {
+                    Modern.PokedexDemo.dataStack.perform(
+                        asynchronous: { (transaction) -> Int? in
+                            let entries = try? transaction.fetchAll(From<Modern.PokedexDemo.PokedexEntry>())
+                            return entries?.count
+                        },
+                        completion: { (count) in
+                            print("called \(i): \(count)")
+                        }
+                    )
+                }
+            }
+        }
+
         func fetchDetails(for pokedexEntry: ObjectSnapshot<Modern.PokedexDemo.PokedexEntry>) {
             
             self.fetchSpeciesIfNeeded(for: pokedexEntry)

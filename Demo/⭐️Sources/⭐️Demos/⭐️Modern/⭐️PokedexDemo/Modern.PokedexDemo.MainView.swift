@@ -27,6 +27,7 @@ extension Modern.PokedexDemo {
         var body: some View {
             let pokedexEntries = self.pokedexEntries.snapshot
             return ZStack {
+
                 
                 Modern.PokedexDemo.ListView(
                     service: self.service,
@@ -59,6 +60,12 @@ extension Modern.PokedexDemo {
                 }
             }
             .navigationBarTitle("Pokedex")
+            .navigationBarItems(trailing: Button(
+                action: { self.service.runInternalTests() },
+                label: {
+                    Text("Change in threads")
+                }
+            ))
         }
 
 
